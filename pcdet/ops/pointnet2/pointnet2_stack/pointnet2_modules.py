@@ -13,12 +13,13 @@ class StackSAModuleMSG(nn.Module):
                  use_xyz: bool = True, pool_method='max_pool'):
         """
         Args:
-            radii: list of float, list of radii to group with
+            radii: list of float, list of radii to group with    [0.4, 0.8]
             即原论文中的半径，搜索当前layer的voxel-wise feature vector 与keypoint p_i的距离
             
-            nsamples: list of int, number of samples in each ball query
-            每一种搜索半径
-            mlps: list of list of int, spec of the pointnet before the global pooling for each scale
+            nsamples: list of int, number of samples in each ball query  [16, 16]
+            每一种搜索半径下最大允许sample的feature vector个数
+            
+            mlps: list of list of int, spec of the pointnet before the global pooling for each scale [[16, 16, 16], [16, 16, 16]]
             use_xyz:
             pool_method: max_pool / avg_pool
         """
