@@ -63,8 +63,13 @@ class StackSAModuleMSG(nn.Module):
         """
         :param xyz: (N1 + N2 ..., 3) tensor of the xyz coordinates of the features
         :param xyz_batch_cnt: (batch_size), [N1, N2, ...]
-        :param new_xyz: (M1 + M2 ..., 3)
+        
+        :param new_xyz: (M1 + M2 ..., 3) 总shape 为 # (B, M, 3)  
+         即 keypoints 的坐标，M1，M2等分别为第一个，第二个batch中的keypoints的数量
+         
         :param new_xyz_batch_cnt: (batch_size), [M1, M2, ...]
+        new_xyz_batch_cnt 方便定位
+        
         :param features: (N1 + N2 ..., C) tensor of the descriptors of the the features
         :return:
             new_xyz: (M1 + M2 ..., 3) tensor of the new features' xyz
@@ -91,6 +96,7 @@ class StackSAModuleMSG(nn.Module):
             new_features = new_features.squeeze(dim=0).permute(1, 0)  # (M1 + M2 ..., C)
             new_features_list.append(new_features)
 
+        # 把两种半径所sample到的feature 沿着最后一个轴拼接起来
         new_features = torch.cat(new_features_list, dim=1)  # (M1 + M2 ..., C)
 
         return new_xyz, new_features
