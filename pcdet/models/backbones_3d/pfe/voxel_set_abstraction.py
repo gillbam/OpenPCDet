@@ -195,9 +195,13 @@ class VoxelSetAbstraction(nn.Module):
             point_features_list.append(point_bev_features)
 
         batch_size, num_keypoints, _ = keypoints.shape
+        
+        # new_xyz 即 keypoints 的坐标，下面三维变二维 （B，M，3） -> （B * M， 3）
+        # 也即球区域中心 的坐标，永远不变
         new_xyz = keypoints.view(-1, 3)
         new_xyz_batch_cnt = new_xyz.new_zeros(batch_size).int().fill_(num_keypoints)
 
+        # 对raw_points做voxel-wise 和 point-wise的feature aggregation
         if 'raw_points' in self.model_cfg.FEATURES_SOURCE:
             raw_points = batch_dict['points']
             xyz = raw_points[:, 1:4]
@@ -207,18 +211,22 @@ class VoxelSetAbstraction(nn.Module):
             point_features = raw_points[:, 4:].contiguous() if raw_points.shape[1] > 4 else None
 
             pooled_points, pooled_features = self.SA_rawpoints(
-                xyz=xyz.contiguous(),
-                xyz_batch_cnt=xyz_batch_cnt,
-                new_xyz=new_xyz,
+                xyz=xyz.contiguous(),  # 点云的坐标 (B * N, 3)
+                xyz_batch_cnt=xyz_batch_cnt, # batch size
+                new_xyz=new_xyz, # 球心keypoints的坐标 (B * M, 3)
                 new_xyz_batch_cnt=new_xyz_batch_cnt,
-                features=point_features,
+                features=point_features, 
             )
             
             # 添加raw point features
             point_features_list.append(pooled_features.view(batch_size, num_keypoints, -1))
-
+        
+        # 对不同level的 3D CNN产生的voxels 做voxel-wise 和 point-wise的feature aggregation
         for k, src_name in enumerate(self.SA_layer_names):
+            
             cur_coords = batch_dict['multi_scale_3d_features'][src_name].indices
+            
+            # 计算voxel的中心，以便之后与keypoint的距离计算
             xyz = common_utils.get_voxel_centers(
                 cur_coords[:, 1:4],
                 downsample_times=self.downsample_times_map[src_name],
@@ -230,11 +238,14 @@ class VoxelSetAbstraction(nn.Module):
                 xyz_batch_cnt[bs_idx] = (cur_coords[:, 0] == bs_idx).sum()
 
             pooled_points, pooled_features = self.SA_layers[k](
-                xyz=xyz.contiguous(),
+                # 该层CNN的所有voxel的中心点坐标的集合
+                xyz=xyz.contiguous(), 
                 xyz_batch_cnt=xyz_batch_cnt,
-                new_xyz=new_xyz,
+                new_xyz=new_xyz, # 球心keypoints的坐标 (B * M, 3)
                 new_xyz_batch_cnt=new_xyz_batch_cnt,
-                features=batch_dict['multi_scale_3d_features'][src_name].features.contiguous(),
+                
+                # 此features为该层CNN输出的features
+                features=batch_dict['multi_scale_3d_features'][src_name].features.contiguous(), 
             )
             
             # 添加keypoint features
