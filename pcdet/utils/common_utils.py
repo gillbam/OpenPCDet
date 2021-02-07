@@ -75,8 +75,12 @@ def get_voxel_centers(voxel_coords, downsample_times, voxel_size, point_cloud_ra
     """
     assert voxel_coords.shape[1] == 3
     voxel_centers = voxel_coords[:, [2, 1, 0]].float()  # (xyz)
+    
+    # 降采样实际扩大了voxel_size
     voxel_size = torch.tensor(voxel_size, device=voxel_centers.device).float() * downsample_times
     pc_range = torch.tensor(point_cloud_range[0:3], device=voxel_centers.device).float()
+    
+    
     voxel_centers = (voxel_centers + 0.5) * voxel_size + pc_range
     return voxel_centers
 
