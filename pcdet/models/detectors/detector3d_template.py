@@ -19,6 +19,8 @@ class Detector3DTemplate(nn.Module):
         self.class_names = dataset.class_names
         self.register_buffer('global_step', torch.LongTensor(1).zero_())
 
+        # 每个model都由这几个module的子集组成；
+        # “build_xxx”函数开始时候，会先判断yaml文件中有没有这项module，有的话，才构造
         self.module_topology = [
             'vfe', 'backbone_3d', 'map_to_bev_module', 'pfe',
             'backbone_2d', 'dense_head',  'point_head', 'roi_head'
@@ -80,6 +82,7 @@ class Detector3DTemplate(nn.Module):
         if self.model_cfg.get('MAP_TO_BEV', None) is None:
             return None, model_info_dict
 
+        # 如果是 NAME: HeightCompression， 那么获得的feature shape：（N, C * D, H, W）， D本来是高度，C是feature数量
         map_to_bev_module = map_to_bev.__all__[self.model_cfg.MAP_TO_BEV.NAME](
             model_cfg=self.model_cfg.MAP_TO_BEV,
             grid_size=model_info_dict['grid_size']
