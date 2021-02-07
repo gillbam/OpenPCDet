@@ -32,11 +32,14 @@ class StackSAModuleMSG(nn.Module):
         for i in range(len(radii)):
             radius = radii[i]
             nsample = nsamples[i]
+            
+            # self.groupers 负责找最近邻
             self.groupers.append(pointnet2_utils.QueryAndGroup(radius, nsample, use_xyz=use_xyz))
             mlp_spec = mlps[i]
             if use_xyz:
                 mlp_spec[0] += 3
-
+            
+            # self.groupers 负责PointNet layer
             shared_mlps = []
             for k in range(len(mlp_spec) - 1):
                 shared_mlps.extend([
@@ -61,25 +64,39 @@ class StackSAModuleMSG(nn.Module):
 
     def forward(self, xyz, xyz_batch_cnt, new_xyz, new_xyz_batch_cnt, features=None, empty_voxel_set_zeros=True):
         """
-        :param xyz: (N1 + N2 ..., 3) tensor of the xyz coordinates of the features
+        # (B * N, 3)
+        :param xyz: (N1 + N2 ..., 3) tensor of the xyz coordinates of the features  
+        # 点云 or voxel cnn feature volume 的坐标
+        
         :param xyz_batch_cnt: (batch_size), [N1, N2, ...]
         
-        :param new_xyz: (M1 + M2 ..., 3) 总shape 为 # (B, M, 3)  
-         即 keypoints 的坐标，M1，M2等分别为第一个，第二个batch中的keypoints的数量
+        总shape 为 # (B * M, 3)  
+        :param new_xyz: (M1 + M2 ..., 3) 
+         # 即 keypoints 的坐标，M1，M2等分别为第一个，第二个batch中的keypoints的数量
+         # 即球区域中心 的坐标，永远不变
          
         :param new_xyz_batch_cnt: (batch_size), [M1, M2, ...]
         new_xyz_batch_cnt 方便定位
         
         :param features: (N1 + N2 ..., C) tensor of the descriptors of the the features
+        
         :return:
             new_xyz: (M1 + M2 ..., 3) tensor of the new features' xyz
             new_features: (M1 + M2 ..., \sum_k(mlps[k][-1])) tensor of the new_features descriptors
+            
+            # new_xyz: keypoints，即球区域中心 的坐标，永远不变
+            # new_features：aggregated features
         """
         new_features_list = []
         for k in range(len(self.groupers)):
+            
+            # 类似于pointnet++中的grouping layer，通过ball query找到keypoint的最近邻，得到new_features
+            # note: ball_idxs 在这里没用到其实
             new_features, ball_idxs = self.groupers[k](
                 xyz, xyz_batch_cnt, new_xyz, new_xyz_batch_cnt, features
             )  # (M1 + M2, C, nsample)
+            
+            # self.mlps 负责PointNet layer，随后max pooling
             new_features = new_features.permute(1, 0, 2).unsqueeze(dim=0)  # (1, C, M1 + M2 ..., nsample)
             new_features = self.mlps[k](new_features)  # (1, C, M1 + M2 ..., nsample)
 
@@ -94,11 +111,15 @@ class StackSAModuleMSG(nn.Module):
             else:
                 raise NotImplementedError
             new_features = new_features.squeeze(dim=0).permute(1, 0)  # (M1 + M2 ..., C)
+            
+            # 得到point-wise 和 voxel-wise的aggregated features
             new_features_list.append(new_features)
 
         # 把两种半径所sample到的feature 沿着最后一个轴拼接起来
         new_features = torch.cat(new_features_list, dim=1)  # (M1 + M2 ..., C)
-
+        
+        # new_xyz: keypoints，即球区域中心 的坐标，永远不变
+        # new_features：aggregated features
         return new_xyz, new_features
 
 
