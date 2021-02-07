@@ -54,17 +54,24 @@ class VoxelSetAbstraction(nn.Module):
         self.SA_layer_names = []
         self.downsample_times_map = {}
         c_in = 0
+        
+        # FEATURES_SOURCE = ['bev', 'x_conv1', 'x_conv2', 'x_conv3', 'x_conv4', 'raw_points']
         for src_name in self.model_cfg.FEATURES_SOURCE:
             if src_name in ['bev', 'raw_points']:
                 continue
             self.downsample_times_map[src_name] = SA_cfg[src_name].DOWNSAMPLE_FACTOR
-            mlps = SA_cfg[src_name].MLPS
+            mlps = SA_cfg[src_name].MLPS  # 例： [[16, 16], [16, 16]]
+            
+            # 扩增MLP
             for k in range(len(mlps)):
-                mlps[k] = [mlps[k][0]] + mlps[k]
+                # k=0, mlps[0] = [16, 16, 16]
+                # k=1, mlps[1] = [16, 16, 16]
+                mlps[k] = [mlps[k][0]] + mlps[k] 
+                
             cur_layer = pointnet2_stack_modules.StackSAModuleMSG(
-                radii=SA_cfg[src_name].POOL_RADIUS,
-                nsamples=SA_cfg[src_name].NSAMPLE,
-                mlps=mlps,
+                radii=SA_cfg[src_name].POOL_RADIUS, # [0.4, 0.8]
+                nsamples=SA_cfg[src_name].NSAMPLE, # [16, 16]， 每个球中允许sample的feature最大数量
+                mlps=mlps, # [[16, 16, 16], [16, 16, 16]]
                 use_xyz=True,
                 pool_method='max_pool',
             )
