@@ -2,6 +2,8 @@
 Stacked-batch-data version of ball query, modified from the original implementation of official PointNet++ codes.
 Written by Shaoshuai Shi
 All Rights Reserved 2019-2020.
+
+来源： https://github.com/charlesq34/pointnet2/blob/42926632a3c33461aebfbee2d829098b30a23aaa/tf_ops/grouping/test/query_ball_point.cu
 */
 
 
@@ -15,12 +17,17 @@ All Rights Reserved 2019-2020.
 
 __global__ void ball_query_kernel_stack(int B, int M, float radius, int nsample, \
     const float *new_xyz, const int *new_xyz_batch_cnt, const float *xyz, const int *xyz_batch_cnt, int *idx) {
+    
+    // B: 待搜索feature vector or point cloud 集合
+    // M：球区域的个数，即keypoint p_i的个数，2048 for kitti
+    
     // :param xyz: (N1 + N2 ..., 3) xyz coordinates of the features
     // :param xyz_batch_cnt: (batch_size), [N1, N2, ...]
     // :param new_xyz: (M1 + M2 ..., 3) centers of the ball query
-    // :param new_xyz_batch_cnt: (batch_size), [M1, M2, ...]
+    // :param new_xyz_batch_cnt: (batch_size), [M1, M2, ...]，每个batch中的球区域的个数？
     // output:
-    //      idx: (M, nsample)
+    //      idx: (M, nsample) 即每个球区域内有nsample个邻居点
+    
     int pt_idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (pt_idx >= M) return;
 
@@ -52,6 +59,7 @@ __global__ void ball_query_kernel_stack(int B, int M, float radius, int nsample,
         float z = xyz[k * 3 + 2];
         float d2 = (new_x - x) * (new_x - x) + (new_y - y) * (new_y - y) + (new_z - z) * (new_z - z);
         if (d2 < radius2){
+            // set ALL indices to k, s.t. if there are less points in ball than nsample, we still have valid (repeating) indices
             if (cnt == 0){
                 for (int l = 0; l < nsample; ++l) {
                     idx[l] = k;
