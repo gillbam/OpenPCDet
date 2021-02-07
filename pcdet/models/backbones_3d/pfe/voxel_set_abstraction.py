@@ -118,7 +118,7 @@ class VoxelSetAbstraction(nn.Module):
 
     def get_sampled_points(self, batch_dict):
         batch_size = batch_dict['batch_size']
-        if self.model_cfg.POINT_SOURCE == 'raw_points':
+        if self.model_cfg.POINT_SOURCE == 'raw_points':  #一般是这种模式
             src_points = batch_dict['points'][:, 1:4]
             batch_indices = batch_dict['points'][:, 0].long()
         elif self.model_cfg.POINT_SOURCE == 'voxel_centers':
@@ -132,15 +132,16 @@ class VoxelSetAbstraction(nn.Module):
         else:
             raise NotImplementedError
         keypoints_list = []
-        for bs_idx in range(batch_size):
+        for bs_idx in range(batch_size): 
             bs_mask = (batch_indices == bs_idx)
             sampled_points = src_points[bs_mask].unsqueeze(dim=0)  # (1, N, 3)
             if self.model_cfg.SAMPLE_METHOD == 'FPS':
                 cur_pt_idxs = pointnet2_stack_utils.furthest_point_sample(
                     sampled_points[:, :, 0:3].contiguous(), self.model_cfg.NUM_KEYPOINTS
                 ).long()
-
-                if sampled_points.shape[1] < self.model_cfg.NUM_KEYPOINTS:
+                
+                #不足2048个，就复制到2048
+                if sampled_points.shape[1] < self.model_cfg.NUM_KEYPOINTS: 
                     empty_num = self.model_cfg.NUM_KEYPOINTS - sampled_points.shape[1]
                     cur_pt_idxs[0, -empty_num:] = cur_pt_idxs[0, :empty_num]
 
@@ -153,7 +154,7 @@ class VoxelSetAbstraction(nn.Module):
 
             keypoints_list.append(keypoints)
 
-        keypoints = torch.cat(keypoints_list, dim=0)  # (B, M, 3)
+        keypoints = torch.cat(keypoints_list, dim=0)  # (B, M, 3) M是 num of keypoints
         return keypoints
 
     def forward(self, batch_dict):
@@ -174,7 +175,8 @@ class VoxelSetAbstraction(nn.Module):
             point_coords: (N, 4)
 
         """
-        keypoints = self.get_sampled_points(batch_dict)
+        # 先FPS采样keypoints
+        keypoints = self.get_sampled_points(batch_dict)   
 
         point_features_list = []
         if 'bev' in self.model_cfg.FEATURES_SOURCE:
@@ -182,6 +184,7 @@ class VoxelSetAbstraction(nn.Module):
                 keypoints, batch_dict['spatial_features'], batch_dict['batch_size'],
                 bev_stride=batch_dict['spatial_features_stride']
             )
+            # 添加bev features
             point_features_list.append(point_bev_features)
 
         batch_size, num_keypoints, _ = keypoints.shape
@@ -203,6 +206,8 @@ class VoxelSetAbstraction(nn.Module):
                 new_xyz_batch_cnt=new_xyz_batch_cnt,
                 features=point_features,
             )
+            
+            # 添加raw point features
             point_features_list.append(pooled_features.view(batch_size, num_keypoints, -1))
 
         for k, src_name in enumerate(self.SA_layer_names):
@@ -224,16 +229,21 @@ class VoxelSetAbstraction(nn.Module):
                 new_xyz_batch_cnt=new_xyz_batch_cnt,
                 features=batch_dict['multi_scale_3d_features'][src_name].features.contiguous(),
             )
+            
+            # 添加keypoint features
             point_features_list.append(pooled_features.view(batch_size, num_keypoints, -1))
-
+    
+        # 拼接三种feature
         point_features = torch.cat(point_features_list, dim=2)
 
         batch_idx = torch.arange(batch_size, device=keypoints.device).view(-1, 1).repeat(1, keypoints.shape[1]).view(-1)
         point_coords = torch.cat((batch_idx.view(-1, 1).float(), keypoints.view(-1, 3)), dim=1)
 
         batch_dict['point_features_before_fusion'] = point_features.view(-1, point_features.shape[-1])
+        
+        # 过一遍MLP，输出shape（B，N，128）
         point_features = self.vsa_point_feature_fusion(point_features.view(-1, point_features.shape[-1]))
 
-        batch_dict['point_features'] = point_features  # (BxN, C)
+        batch_dict['point_features'] = point_features  # (BxN, C) C为128（NUM_OUTPUT_FEATURES）
         batch_dict['point_coords'] = point_coords  # (BxN, 4)
         return batch_dict
